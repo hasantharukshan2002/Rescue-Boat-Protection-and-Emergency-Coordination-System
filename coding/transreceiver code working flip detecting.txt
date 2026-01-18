@@ -1,0 +1,262 @@
+#include <Wire.h>
+#include <SPI.h>
+#include <LoRa.h>
+ 
+// ===== UNIQUE BOAT ID - CHANGE FOR EACH BOAT =====
+#define BOAT_ID    1              // SET TO 1 or 2 for different boats
+ 
+// ===== LORA MODULE PINS =====
+#define LORA_CS    10             // LoRa module CS pin
+#define LORA_RST   9              // LoRa module RESET pin
+#define LORA_DIO0  2              // LoRa module DIO0 pin
+ 
+// ===== MPU6050 I2C ADDRESS =====
+const uint8_t MPU_ADDR = 0x68;    // I2C address of MPU6050
+ 
+// ===== CONVERSION FACTORS =====
+#define RAD_TO_DEG 57.2957795
+#define PI         3.14159265359
+ 
+// ===== STATE VARIABLES =====
+bool flipSent = false;            // Track if flip alert already sent
+unsigned long lastHeartbeat = 0;  // For periodic status updates
+ 
+void setup() {
+  Serial.begin(9600);
+  // Removed: while (!Serial); - allows standalone operation without USB
+ 
+  delay(500);
+  Serial.println("");
+  Serial.println("========================================");
+  Serial.println("LORA BOAT FLIP DETECTION SYSTEM");
+  Serial.println("========================================");
+  Serial.print("BOAT ID: ");
+  Serial.println(BOAT_ID);
+  Serial.println("");
+ 
+  // Initialize I2C (MPU6050)
+  Wire.begin();
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(0x6B);    // PWR_MGMT_1 register
+  Wire.write(0);       // set to 0 -> wakes up MPU6050
+  Wire.endTransmission(true);
+  Serial.println("[OK] MPU6050 Initialized");
+ 
+  // Initialize LoRa radio
+  LoRa.setPins(LORA_CS, LORA_RST, LORA_DIO0);
+  if (!LoRa.begin(433E6)) { // initialize at 433 MHz
+    Serial.println("[ERROR] LoRa init failed!");
+    while (1);
+  }
+ 
+  // Configure LoRa for better range
+  LoRa.setTxPower(20);
+  LoRa.setSpreadingFactor(10);
+  Serial.println("[OK] LoRa Initialized at 433 MHz");
+  Serial.println("");
+  Serial.println(">> System Ready - Monitoring for flips...");
+  Serial.println(">> Listening for other boats...");
+  Serial.println("");
+}
+ 
+void loop() {
+  // 1. READ ACCELEROMETER DATA FROM MPU6050
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write(0x3B);    // starting register for accelerometer data
+  Wire.endTransmission(false);
+  Wire.requestFrom(MPU_ADDR, 6, true);
+ 
+  int16_t rawAx = 0, rawAy = 0, rawAz = 0;
+ 
+  if (Wire.available() == 6) {
+    rawAx = Wire.read() << 8 | Wire.read();  // 16-bit Ax
+    rawAy = Wire.read() << 8 | Wire.read();  // 16-bit Ay
+    rawAz = Wire.read() << 8 | Wire.read();  // 16-bit Az
+  }
+ 
+  // Convert raw accelerometer to G units (±2g sensitivity = 16384 LSB/g)
+  float Ax = rawAx / 16384.0;
+  float Ay = rawAy / 16384.0;
+  float Az = rawAz / 16384.0;
+ 
+  // Calculate roll and pitch angles (in degrees)
+  float roll = atan2(Ay, Az) * RAD_TO_DEG;
+  float pitch = atan2(-Ax, sqrt(Ay*Ay + Az*Az)) * RAD_TO_DEG;
+ 
+  // 2. DETECT FLIP BASED ON ANGLE THRESHOLD
+  bool flipped = false;
+  if (fabs(roll) > 90.0 || fabs(pitch) > 90.0) {
+    flipped = true;
+  }
+ 
+  // 3. SEND FLIP ALERT VIA LORA (ONLY ONCE PER FLIP EVENT)
+  if (flipped && !flipSent) {
+    Serial.println("");
+    Serial.println("!!! FLIP DETECTED !!!");
+    Serial.print("Roll: ");
+    Serial.print(roll, 1);
+    Serial.print(" | Pitch: ");
+    Serial.println(pitch, 1);
+   
+    // Build detailed LoRa packet with boat ID, angle data, and timestamp
+    char flipMsg[100];
+    unsigned long timestamp = millis() / 1000;  // seconds since startup
+    int roll_int = (int)roll;
+    int pitch_int = (int)pitch;
+    snprintf(flipMsg, sizeof(flipMsg), "ALERT|ID%d|FLIP|T:%lu|R:%d|P:%d",
+             BOAT_ID, timestamp, roll_int, pitch_int);
+   
+    // Send flip alert 3 times (non-blocking for continuous monitoring)
+    for (int i = 0; i < 3; i++) {
+      LoRa.beginPacket();
+      LoRa.print(flipMsg);
+      LoRa.endPacket();
+    }
+   
+    Serial.println(">> FLIP ALERT SENT VIA LORA (5x for reliability)");
+    Serial.print(">> Message: ");
+    Serial.println(flipMsg);
+    flipSent = true;
+  }
+ 
+  // Reset flag when boat rights back (so it can send again if it flips again)
+  if (!flipped && flipSent) {
+    flipSent = false;
+    Serial.println("[INFO] Boat righted - ready for next flip detection");
+  }
+ 
+  // 4. LISTEN FOR INCOMING LORA PACKETS FROM OTHER BOATS
+  int packetSize = LoRa.parsePacket();
+  if (packetSize) {
+    // Read the incoming packet
+    char packet[100] = {0};
+    int idx = 0;
+   
+    while (LoRa.available() && idx < 99) {
+      packet[idx++] = (char)LoRa.read();
+    }
+    packet[idx] = 0;
+ 
+    int rssi = LoRa.packetRssi();
+ 
+    Serial.println("");
+    Serial.println("*** PACKET RECEIVED ***");
+    Serial.print("Raw Message: ");
+    Serial.println(packet);
+    Serial.print("Signal Strength: ");
+    Serial.print(rssi);
+    Serial.println(" dBm");
+ 
+    // Check if it's a flip alert message
+    if (strstr(packet, "FLIP") != NULL && strstr(packet, "ALERT") != NULL) {
+      // Parse flip alert: "ALERT|ID<X>|FLIP|T:<time>|R:<roll>|P:<pitch>"
+      char boatID[5] = {0};
+      char timestamp[15] = {0};
+      char roll_str[10] = {0};
+      char pitch_str[10] = {0};
+     
+      // Extract boat ID
+      char* idPos = strstr(packet, "ID");
+      if (idPos) {
+        idPos += 2;  // skip "ID"
+        int i = 0;
+        while (*idPos != '|' && i < 4) {
+          boatID[i++] = *idPos++;
+        }
+        boatID[i] = 0;
+      }
+     
+      // Extract timestamp
+      char* timePos = strstr(packet, "T:");
+      if (timePos) {
+        timePos += 2;  // skip "T:"
+        int i = 0;
+        while (*timePos != '|' && i < 14) {
+          timestamp[i++] = *timePos++;
+        }
+        timestamp[i] = 0;
+      }
+     
+      // Extract roll angle
+      char* rollPos = strstr(packet, "R:");
+      if (rollPos) {
+        rollPos += 2;  // skip "R:"
+        int i = 0;
+        while (*rollPos != '|' && i < 9) {
+          roll_str[i++] = *rollPos++;
+        }
+        roll_str[i] = 0;
+      }
+     
+      // Extract pitch angle
+      char* pitchPos = strstr(packet, "P:");
+      if (pitchPos) {
+        pitchPos += 2;  // skip "P:"
+        int i = 0;
+        while (*pitchPos != 0 && i < 9) {
+          pitch_str[i++] = *pitchPos++;
+        }
+        pitch_str[i] = 0;
+      }
+ 
+      Serial.println("");
+      Serial.println("╔════════════════════════════════════════════╗");
+      Serial.print("║  ALERT: BOAT ");
+      Serial.print(boatID);
+      Serial.println(" HAS FLIPPED!!!        ║");
+      Serial.print("║  Time: ");
+      Serial.print(timestamp);
+      Serial.println("s                         ║");
+      Serial.print("║  Roll: ");
+      Serial.print(roll_str);
+      Serial.print("° | Pitch: ");
+      Serial.print(pitch_str);
+      Serial.println("°       ║");
+      Serial.print("║  Signal: ");
+      Serial.print(rssi);
+      Serial.println(" dBm                       ║");
+      Serial.println("║  >>> TAKE IMMEDIATE ACTION <<<           ║");
+      Serial.println("╚════════════════════════════════════════════╝");
+      Serial.println("");
+    }
+  }
+ 
+  // 5. SEND PERIODIC HEARTBEAT (EVERY 5 SECONDS)
+  if (millis() - lastHeartbeat > 5000) {
+    // Convert float to int for proper Arduino snprintf support
+    int roll_int = (int)roll;
+    int pitch_int = (int)pitch;
+   
+    char heartbeat[50];
+    snprintf(heartbeat, sizeof(heartbeat), "ID%d:OK|R:%d|P:%d",
+             BOAT_ID, roll_int, pitch_int);
+   
+    LoRa.beginPacket();
+    LoRa.print(heartbeat);
+    LoRa.endPacket();
+   
+    lastHeartbeat = millis();
+  }
+ 
+  // 6. PRINT SENSOR DATA PERIODICALLY (EVERY 500MS)
+  static unsigned long lastPrint = 0;
+  if (millis() - lastPrint > 500) {
+    Serial.print("[BOAT ");
+    Serial.print(BOAT_ID);
+    Serial.print("] Ax:");
+    Serial.print(Ax, 2);
+    Serial.print(" Ay:");
+    Serial.print(Ay, 2);
+    Serial.print(" Az:");
+    Serial.print(Az, 2);
+    Serial.print(" | Roll:");
+    Serial.print(roll, 1);
+    Serial.print("° Pitch:");
+    Serial.print(pitch, 1);
+    Serial.println("°");
+   
+    lastPrint = millis();
+  }
+ 
+  delay(10);
+}

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LoRa Boat Monitor</string>
+    <string name="title_activity_main">Boat Status Monitor</string>
+    <string name="btn_connect">Connect Device</string>
+    <string name="btn_disconnect">Disconnect</string>
+    <string name="status_disconnected">Disconnected</string>
+    <string name="status_connected">Connected</string>
+    <string name="boat_id">Boat ID: </string>
+    <string name="signal_strength">Signal Strength</string>
+    <string name="flip_status">Flip Status</string>
+    <string name="normal">NORMAL</string>
+    <string name="flipped">FLIPPED!</string>
+    <string name="battery">Battery Level</string>
+    <string name="temperature">Temperature</string>
+    <string name="latitude">Latitude</string>
+    <string name="longitude">Longitude</string>
+    <string name="device_list">Select Device</string>
+    <string name="scanning">Scanning...</string>
+    <string name="no_devices">No devices found</string>
+</resources>

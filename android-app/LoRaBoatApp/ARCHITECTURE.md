@@ -1,0 +1,392 @@
+# System Architecture Diagrams
+
+## Complete System Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    COMPLETE LORA BOAT SYSTEM                    │
+└─────────────────────────────────────────────────────────────────┘
+
+                        ┌──────────────────┐
+                        │   BOAT (On Water)│
+                        │  Arduino + Sensors│
+                        │  ├─ MPU6050 (Gyro)│
+                        │  ├─ Temperature   │
+                        │  ├─ GPS Module    │
+                        │  └─ LoRa Module   │
+                        └────────┬──────────┘
+                                 │
+                    (1) LoRa Radio Signal
+                                 │
+                                 ▼
+                        ┌──────────────────┐
+                        │  Base Station    │
+                        │  (Optional)      │
+                        └────────┬──────────┘
+                                 │
+                (2) WiFi/Ethernet to Server
+                                 │
+                    (Alternative Direct Path)
+                                 │
+         ┌────────────────────────┼────────────────────────┐
+         │                        │                        │
+         ▼                        ▼                        ▼
+    ┌─────────────┐        ┌──────────────┐        ┌──────────────┐
+    │  Bluetooth  │        │   Server DB  │        │  Web Portal  │
+    │  Module     │        │  (Firebase)  │        │  (Dashboard) │
+    │  (HC-05)    │        └──────────────┘        └──────────────┘
+    └──────┬──────┘
+           │
+        (3) Bluetooth
+           │
+    ┌──────▼──────────────────────────────────┐
+    │    ANDROID PHONE (USER)                 │
+    │  ┌────────────────────────────────────┐ │
+    │  │   LoRa Boat Monitor App            │ │
+    │  │  ┌──────────────────────────────┐ │ │
+    │  │  │ Main Monitoring Screen       │ │ │
+    │  │  │ ┌────────────────────────────┤ │ │
+    │  │  │ │ Boat Status                │ │ │
+    │  │  │ │ ├─ ID: 1                   │ │ │
+    │  │  │ │ ├─ Flip: NORMAL ✓          │ │ │
+    │  │  │ │ │ OR FLIPPED ✗ (Alert!)   │ │ │
+    │  │  │ │                            │ │ │
+    │  │  │ │ Sensor Data                │ │ │
+    │  │  │ │ ├─ Signal: 75%             │ │ │
+    │  │  │ │ ├─ Battery: 85%            │ │ │
+    │  │  │ │ ├─ Temp: 28.5°C            │ │ │
+    │  │  │ │                            │ │ │
+    │  │  │ │ Location                   │ │ │
+    │  │  │ │ ├─ Lat: 40.7128            │ │ │
+    │  │  │ │ └─ Lon: -74.0060           │ │ │
+    │  │  │ └────────────────────────────┤ │ │
+    │  │  └──────────────────────────────┘ │ │
+    │  └────────────────────────────────────┘ │
+    └─────────────────────────────────────────┘
+```
+
+## Android App Architecture
+
+```
+┌──────────────────────────────────────────────────┐
+│         Android Application (LoRa Boat App)      │
+├──────────────────────────────────────────────────┤
+│                                                  │
+│  ┌──────────────────────────────────────────┐   │
+│  │     MainActivity (Main Screen)           │   │
+│  │  ┌────────────────────────────────────┐  │   │
+│  │  │ - Display sensor data             │  │   │
+│  │  │ - Show boat status                │  │   │
+│  │  │ - Trigger flip alerts             │  │   │
+│  │  │ - Handle connect button           │  │   │
+│  │  └────────────────────────────────────┘  │   │
+│  └──────────────┬───────────────────────────┘   │
+│                 │                               │
+│  ┌──────────────▼───────────────────────────┐   │
+│  │ DeviceListActivity (Device Selection)    │   │
+│  │  ┌────────────────────────────────────┐  │   │
+│  │  │ - Scan for Bluetooth devices      │  │   │
+│  │  │ - Display paired devices          │  │   │
+│  │  │ - Handle device selection         │  │   │
+│  │  │ - Manage permissions              │  │   │
+│  │  └────────────────────────────────────┘  │   │
+│  └──────────────┬───────────────────────────┘   │
+│                 │                               │
+│  ┌──────────────▼───────────────────────────┐   │
+│  │    BluetoothManager (Core Logic)         │   │
+│  │  ┌────────────────────────────────────┐  │   │
+│  │  │ - Connect to Bluetooth device     │  │   │
+│  │  │ - Manage connection state        │  │   │
+│  │  │ - Send/receive data              │  │   │
+│  │  │ - Handle errors                  │  │   │
+│  │  │ - Run background read thread     │  │   │
+│  │  └────────────────────────────────────┘  │   │
+│  └──────────────┬───────────────────────────┘   │
+│                 │                               │
+│  ┌──────────────▼───────────────────────────┐   │
+│  │     BoatData (Data Model)                │   │
+│  │  ┌────────────────────────────────────┐  │   │
+│  │  │ - Parse incoming data             │  │   │
+│  │  │ - Store boat parameters           │  │   │
+│  │  │ - Validate sensor values          │  │   │
+│  │  │ - Format for display              │  │   │
+│  │  └────────────────────────────────────┘  │   │
+│  └──────────────────────────────────────────┘   │
+│                                                  │
+└──────────────────────────────────────────────────┘
+          ▲
+          │ Bluetooth Communication
+          │
+┌─────────▼──────────┐
+│  Bluetooth Device  │
+│  (HC-05 Module)    │
+└────────────────────┘
+```
+
+## Data Flow Diagram
+
+```
+┌──────────────────┐
+│   Arduino Code   │
+└────────┬─────────┘
+         │ Sensor reading every 100ms
+         │ MPU6050, GPS, Temperature, etc.
+         │
+         ▼
+   ┌─────────────────────────┐
+   │ Data Processing         │
+   │ ├─ Calculate tilt angle │
+   │ ├─ Detect flip          │
+   │ ├─ Get GPS coords       │
+   │ └─ Format data          │
+   └────────┬────────────────┘
+            │ Every 5000ms (configurable)
+            │
+            ▼
+   ┌─────────────────────────────────────────────┐
+   │ Bluetooth Serial Output                     │
+   │ "ID:1,FLIP:0,SIGNAL:75,BATTERY:85,         │
+   │  TEMP:28.5,LAT:40.7128,LON:-74.0060"       │
+   └────────┬────────────────────────────────────┘
+            │ Bluetooth (9600 baud)
+            │
+            ▼
+   ┌──────────────────────────┐
+   │ Android BluetoothManager │
+   │ (ReadThread)             │
+   └────────┬─────────────────┘
+            │ Receives data on main thread
+            │
+            ▼
+   ┌──────────────────────────┐
+   │ BoatData.parseData()     │
+   │ Split and parse fields   │
+   └────────┬─────────────────┘
+            │ Update BoatData object
+            │
+            ▼
+   ┌──────────────────────────────────┐
+   │ MainActivity.updateUI()          │
+   │ ├─ Update all TextViews          │
+   │ ├─ Update progress bars          │
+   │ ├─ Check for flip status         │
+   │ └─ Show/hide alerts              │
+   └────────┬──────────────────────────┘
+            │
+            ▼
+   ┌──────────────────────────────────┐
+   │ User Sees Updated Information    │
+   │ on Android Phone Screen          │
+   └──────────────────────────────────┘
+```
+
+## Bluetooth Communication Protocol
+
+```
+ARDUINO SIDE                          ANDROID SIDE
+────────────                          ────────────
+
+setup()
+│
+├─ Initialize Serial
+├─ Initialize I2C (MPU6050)
+├─ Initialize LoRa
+└─ Connect Bluetooth module
+
+
+loop()
+│
+├─ Read sensors (every 100ms)
+│  ├─ MPU6050 accelerometer
+│  ├─ GPS coordinates
+│  ├─ Temperature sensor
+│  └─ Battery voltage
+│
+├─ Process data (every 100ms)
+│  └─ Calculate flip detection
+│
+├─ Format data (every 5000ms)
+│  └─ "ID:1,FLIP:0,..."
+│
+└─ Send via Bluetooth
+   └─ btSerial.println(data)
+
+
+                          MainActivity
+                          │
+                          ├─ onCreate()
+                          │  └─ Initialize BluetoothManager
+                          │
+                          ├─ User taps "Connect Device"
+                          │
+                          ├─ DeviceListActivity
+                          │  ├─ Scan devices
+                          │  ├─ Display list
+                          │  └─ User selects device
+                          │
+                          ├─ BluetoothManager.connect()
+                          │  └─ Create Bluetooth socket
+                          │
+                          ├─ ReadThread.run()
+                          │  └─ Listens for incoming data
+                          │
+                          ├─ Receives: "ID:1,FLIP:0,..."
+                          │  │
+                          │  ├─ Pass to BoatData.parseData()
+                          │  │
+                          │  ├─ Update BoatData fields
+                          │  │
+                          │  └─ Call MainActivity.updateUI()
+                          │
+                          └─ Display on screen
+```
+
+## User Interface Hierarchy
+
+```
+                     Application
+                          │
+                    ┌─────▼─────┐
+                    │ Manifest  │
+                    │ Permissions
+                    │ Activities
+                    └─────┬─────┘
+                          │
+           ┌──────────────┼──────────────┐
+           │              │              │
+        ┌──▼──┐      ┌────▼────┐    ┌───▼────┐
+        │Theme│      │Resources│    │Activities
+        └──┬──┘      └────┬────┘    └───┬────┘
+           │              │              │
+     ┌─────▼─────┐  ┌─────▼─────┐  ┌────▼──────┐
+     │ Colors    │  │ Layouts   │  │ MainActivity
+     │ Strings   │  │ Drawables │  │ DeviceList
+     │ Themes    │  │           │  │
+     └───────────┘  └─────┬─────┘  └──────┬─────┘
+                          │               │
+                    ┌─────▼─────┐    ┌────▼───┐
+                    │activity_  │    │Java    │
+                    │main.xml   │    │Classes │
+                    │activity_  │    │────────│
+                    │device_    │    │Main
+                    │list.xml   │    │Bluetooth
+                    └───────────┘    │Boat
+                                     │Device
+                                     └───────┘
+```
+
+## Permission Flow
+
+```
+App Start
+    │
+    ├─ Check Android Version
+    │  └─ < 6.0: Permission granted at install
+    │  └─ >= 6.0: Request at runtime
+    │
+    ├─ Request Runtime Permissions
+    │  ├─ BLUETOOTH_SCAN (Android 12+)
+    │  ├─ BLUETOOTH_CONNECT (Android 12+)
+    │  ├─ ACCESS_FINE_LOCATION
+    │  └─ ACCESS_COARSE_LOCATION
+    │
+    ├─ Show Permission Dialog
+    │  └─ User accepts/denies
+    │
+    ├─ If Accepted ✓
+    │  └─ Proceed with app
+    │
+    └─ If Denied ✗
+       ├─ Show message
+       ├─ Try again option
+       └─ Limited functionality
+```
+
+## Device Connection Flow
+
+```
+┌──────────────────────────────────────────────────┐
+│ Connection Flow                                  │
+└──────────────────────────────────────────────────┘
+
+1. User clicks "Connect Device"
+   └─ Start DeviceListActivity
+
+2. Scan for paired Bluetooth devices
+   └─ Call BluetoothAdapter.getBondedDevices()
+
+3. Display device list
+   ├─ HC-05 (00:19:5D:AB:C1)
+   ├─ LoRa-BT (20:16:D8:50:F0)
+   └─ BlueMod (98:D3:31:20:50)
+
+4. User selects device
+   └─ Pass device address to MainActivity
+
+5. Create Bluetooth socket
+   └─ device.createRfcommSocketToServiceRecord(UUID)
+
+6. Connect (in background thread)
+   └─ socket.connect()
+
+7. Get input/output streams
+   ├─ inputStream = socket.getInputStream()
+   └─ outputStream = socket.getOutputStream()
+
+8. Start read thread
+   └─ ReadThread.start()
+
+9. Connection callback
+   └─ onConnected() triggered
+
+10. Display "Connected" status
+    └─ Button changes to "Disconnect"
+
+11. Ready to receive data
+    └─ App waits for Bluetooth messages
+```
+
+## Alert System Flow
+
+```
+Normal Operation
+  │
+  ├─ Receive: "FLIP:0" ✓
+  │ └─ Display: "NORMAL" (Green)
+  │ └─ Alert: Hidden
+  │
+  ├─ User continues monitoring
+  │
+  └─ Wait for next data
+
+Flip Detected!
+  │
+  ├─ Receive: "FLIP:1" ⚠
+  │
+  ├─ Set: isFlipped = true
+  │
+  ├─ Update UI
+  │ ├─ Display: "FLIPPED!" (Red)
+  │ ├─ Show Alert: Red box
+  │ └─ Alert Text: "⚠ BOAT FLIPPED!"
+  │
+  ├─ Toast notification
+  │ └─ Brief visual notification
+  │
+  └─ User can take action
+     ├─ Check boat location
+     ├─ Monitor continuously
+     └─ Alert authorities if needed
+
+Back to Normal
+  │
+  ├─ Receive: "FLIP:0" ✓
+  │ └─ Hide alert
+  │ └─ Display: "NORMAL" (Green)
+  │
+  └─ Continue normal monitoring
+```
+
+---
+
+This document provides visual understanding of how all components interact!

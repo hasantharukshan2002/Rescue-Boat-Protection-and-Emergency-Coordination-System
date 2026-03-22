@@ -1,2 +1,0 @@
--keep class com.lora.boatapp.** { *; }
--keep class android.bluetooth.** { *; }

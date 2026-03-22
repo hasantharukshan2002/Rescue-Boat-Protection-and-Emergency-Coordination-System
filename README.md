@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="images/cover.png" width="900">
+</p>
+
 <div align="center">
 
 # 🚤 Rescue Boat Protection and Emergency Coordination System
@@ -20,89 +24,51 @@ This project implements a wireless safety and coordination system for boats usin
 
 When a boat flip is detected, an emergency signal is transmitted to nearby boats to provide real-time warning and coordination.
 
-The system is designed using embedded hardware modules and wireless transceivers suitable for marine environments.
-
 ---
 
 ## ✨ Features
 
-* 🚨 Boat flip detection
-* 📡 Wireless emergency alert
-* 🔗 Multi-boat communication
-* ⚙️ Embedded microcontroller control
-* 🔔 Real-time warning system
-* 📍 Expandable for GPS support
-* 🔋 Low power design
+- Boat flip detection using MPU6050  
+- Wireless emergency alert  
+- Multi-boat communication  
+- Embedded microcontroller control  
+- Real-time warning system  
+- Expandable for GPS  
 
 ---
 
 ## 🔧 Hardware Used
 
-* ATmega328P / Arduino / ESP32
-* HC12 Wireless Transceiver Module
-* MPU6050 Accelerometer & Gyroscope
-* GPS Module (optional)
-* Buzzer / LED alert
-* Voltage regulator
-* Power supply module
+- ATmega328P / Arduino / ESP32  
+- HC12 Wireless Transceiver  
+- MPU6050 Sensor  
+- GPS Module (optional)  
+- Buzzer / LED alert  
 
 ---
 
 ## 📡 Communication Module
 
-The system was initially designed using **LoRa SX1278** for long-range communication.
+Originally designed using LoRa SX1278, but replaced with HC12 transceiver due to configuration complexity and unstable communication during testing.
 
-During testing, configuration complexity and unstable connection were observed, therefore the module was replaced with **HC12 transceiver**, which provides:
-
-* Simple UART communication
-* Easy configuration
-* Stable data transmission
-* Suitable range for boat coordination
-* Faster hardware implementation
-
----
-
-## ⚙️ Working Principle
-
-1. MPU6050 detects abnormal tilt
-2. Microcontroller checks flip condition
-3. Emergency signal generated
-4. HC12 transmits alert message
-5. Nearby boats receive warning
-6. Buzzer / LED activated
+HC12 provides simple UART communication and stable wireless connection suitable for boat coordination.
 
 ---
 
 ## 📂 Repository Structure
 
-Docs/ → Project documents
-Simulations/ → EasyEDA circuit files
-coding/ → Embedded source code
-esp32/lora/ → Wireless communication tests
-.idea/ → IDE workspace files
-
----
-
-## 🌊 Applications
-
-* Fishing boat safety system
-* Rescue boat coordination
-* Marine accident alert system
-* Small vessel monitoring
-* Coastal safety projects
+Docs → Documents  
+Simulations → Circuit files  
+coding → Embedded code  
+esp32/lora → Communication tests  
+.idea → IDE files  
 
 ---
 
 ## 🚀 Future Improvements
 
-* LoRa mesh communication
-* GSM / LTE alert system
-* Base station monitoring
-* Mobile application
-* AI-based accident detection
-
----
-
-## 📜 License
-
-This project is for educational and research purposes.
+- LoRa mesh network  
+- GSM alert system  
+- Base station monitoring  
+- Mobile app  
+- AI detection  

@@ -1,0 +1,229 @@
+#include <Wire.h>
+
+#include <MPU6050.h>
+
+#include <SoftwareSerial.h>
+ 
+/* ===== CONFIG ===== */
+
+#define NODE_ID "BOAT_A"   // Change to BOAT_B for second device
+
+#define LATITUDE  "40.741895"
+
+#define LONGITUDE "-73.989308"
+ 
+#define LED_PIN 13
+ 
+/* ===== MODULES ===== */
+
+MPU6050 mpu;
+ 
+// ✅ HC-12 on D2, D3 (as per your diagram)
+
+SoftwareSerial HC12(2, 3); // RX, TX
+ 
+/* ===== VARIABLES ===== */
+
+int16_t initX, initY, initZ;
+ 
+bool flipped = false;
+
+unsigned long flipStartTime = 0;
+
+unsigned long lastSendTime = 0;
+ 
+void setup() {
+
+  pinMode(LED_PIN, OUTPUT);
+
+  digitalWrite(LED_PIN, LOW);
+ 
+  Serial.begin(9600);   // For debugging (Arduino side)
+
+  HC12.begin(9600);
+
+  Wire.begin();
+ 
+  Serial.println("=== HC-12 TRANSCEIVER ===");
+
+  Serial.println(NODE_ID);
+ 
+  mpu.initialize();
+ 
+  if (!mpu.testConnection()) {
+
+    Serial.println("MPU6050 FAILED");
+
+    while (1);
+
+  }
+ 
+  delay(2000);
+ 
+  mpu.getAcceleration(&initX, &initY, &initZ);
+ 
+  Serial.println("Orientation Calibrated");
+
+}
+ 
+/* ===== MAIN LOOP ===== */
+
+void loop() {
+
+  checkFlip();
+
+  receiveData();
+
+}
+ 
+/* ===== FLIP DETECTION ===== */
+
+void checkFlip() {
+
+  int16_t ax, ay, az;
+
+  mpu.getAcceleration(&ax, &ay, &az);
+ 
+  bool flipCondition = false;
+ 
+  if ((initX > 0 && ax < 0) || (initX < 0 && ax > 0)) flipCondition = true;
+
+  if ((initY > 0 && ay < 0) || (initY < 0 && ay > 0)) flipCondition = true;
+
+  if ((initZ > 0 && az < 0) || (initZ < 0 && az > 0)) flipCondition = true;
+ 
+  if (flipCondition) {
+ 
+    if (flipStartTime == 0)
+
+      flipStartTime = millis();
+ 
+    if ((millis() - flipStartTime > 2000) && !flipped) {
+
+      flipped = true;
+
+      sendAlert();
+
+    }
+ 
+  } else {
+
+    flipStartTime = 0;
+
+    flipped = false;
+
+  }
+
+}
+ 
+/* ===== SEND FUNCTION ===== */
+
+void sendAlert() {
+ 
+  if (millis() - lastSendTime < 5000) return;
+ 
+  lastSendTime = millis();
+ 
+  digitalWrite(LED_PIN, HIGH);
+ 
+  HC12.print("SOS|");
+
+  HC12.print(NODE_ID);
+
+  HC12.print("|FLIPPED|");
+
+  HC12.print(LATITUDE);
+
+  HC12.print(",");
+
+  HC12.println(LONGITUDE);
+ 
+  // SERIAL DEBUG
+
+  Serial.println("SENT:");
+
+  Serial.print("SOS|");
+
+  Serial.print(NODE_ID);
+
+  Serial.print("|FLIPPED|");
+
+  Serial.print(LATITUDE);
+
+  Serial.print(",");
+
+  Serial.println(LONGITUDE);
+
+  Serial.println("----------------");
+ 
+  delay(500);
+ 
+  digitalWrite(LED_PIN, LOW);
+
+}
+ 
+/* ===== RECEIVE FUNCTION ===== */
+
+void receiveData() {
+ 
+  if (HC12.available()) {
+ 
+    String msg = "";
+ 
+    while (HC12.available()) {
+
+      char c = HC12.read();
+
+      msg += c;
+
+      delay(5);
+
+    }
+ 
+    digitalWrite(LED_PIN, HIGH);
+ 
+    Serial.println("RECEIVED:");
+
+    Serial.println(msg);
+
+    Serial.println("----------------");
+ 
+    if (msg.indexOf("FLIPPED") >= 0) {
+ 
+      Serial.println("ALERT: OTHER DEVICE FLIPPED!");
+ 
+      int lastPipe = msg.lastIndexOf('|');
+
+      if (lastPipe != -1) {
+
+        String location = msg.substring(lastPipe + 1);
+ 
+        Serial.print("LOCATION: ");
+
+        Serial.println(location);
+ 
+        Serial.print("MAP: https://maps.google.com/?q=");
+
+        Serial.println(location);
+
+      }
+ 
+      for (int i = 0; i < 3; i++) {
+
+        digitalWrite(LED_PIN, HIGH);
+
+        delay(200);
+
+        digitalWrite(LED_PIN, LOW);
+
+        delay(200);
+
+      }
+
+    }
+ 
+    digitalWrite(LED_PIN, LOW);
+
+  }
+
+}

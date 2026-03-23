@@ -1,0 +1,156 @@
+#define F_CPU 16000000UL
+
+#include <avr/io.h>
+#include <util/delay.h>
+#include <avr/interrupt.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* ================= PIN DEFINITIONS ================= */
+
+#define LED_PIN     PB5   // D13
+#define BUZZER_PIN  PD7   // D7
+#define BUTTON_PIN  PB0   // D8
+
+/* ================= GLOBAL VARIABLES ================= */
+
+volatile unsigned long millis_count = 0;
+
+unsigned long lastSendTime = 0;
+unsigned long blinkTimer = 0;
+unsigned long blinkDuration = 0;
+
+uint8_t blinking = 0;
+
+/* ================= TIMER (millis) ================= */
+
+ISR(TIMER0_OVF_vect)
+{
+    millis_count++;
+}
+
+unsigned long millis()
+{
+    return millis_count;
+}
+
+void timer0_init()
+{
+    TCCR0A = 0x00;
+    TCCR0B = (1 << CS01) | (1 << CS00); // prescaler 64
+    TIMSK0 = (1 << TOIE0);
+}
+
+/* ================= UART (HC12/GPS) ================= */
+
+void uart_init(unsigned int ubrr)
+{
+    UBRR0H = (ubrr >> 8);
+    UBRR0L = ubrr;
+
+    UCSR0B = (1 << TXEN0) | (1 << RXEN0);
+    UCSR0C = (1 << UCSZ01) | (1 << UCSZ00);
+}
+
+void uart_tx(char c)
+{
+    while (!(UCSR0A & (1 << UDRE0)));
+    UDR0 = c;
+}
+
+void uart_print(char *str)
+{
+    while (*str)
+    {
+        uart_tx(*str++);
+    }
+}
+
+/* ================= GPIO ================= */
+
+void gpio_init()
+{
+    DDRB |= (1 << LED_PIN);      // LED output
+    DDRD |= (1 << BUZZER_PIN);   // buzzer output
+
+    DDRB &= ~(1 << BUTTON_PIN);  // button input
+    PORTB |= (1 << BUTTON_PIN);  // pull-up
+}
+
+/* ================= ALERT ================= */
+
+void blink_once()
+{
+    PORTB |= (1 << LED_PIN);
+    _delay_ms(150);
+    PORTB &= ~(1 << LED_PIN);
+}
+
+void send_alert()
+{
+    if (millis() - lastSendTime < 3000) return;
+
+    lastSendTime = millis();
+
+    blink_once();
+
+    uart_print("BOAT_A|80.401694|9.312750\n");
+
+    PORTD |= (1 << BUZZER_PIN);
+    _delay_ms(100);
+    PORTD &= ~(1 << BUZZER_PIN);
+}
+
+/* ================= BUTTON ================= */
+
+void check_button()
+{
+    if (!(PINB & (1 << BUTTON_PIN))) // pressed
+    {
+        send_alert();
+        _delay_ms(500);
+    }
+}
+
+/* ================= BLINK ================= */
+
+void start_blink(unsigned long duration)
+{
+    blinking = 1;
+    blinkDuration = duration;
+    blinkTimer = millis();
+}
+
+void handle_blink()
+{
+    if (!blinking) return;
+
+    if (millis() - blinkTimer > blinkDuration)
+    {
+        blinking = 0;
+        PORTB &= ~(1 << LED_PIN);
+        return;
+    }
+
+    if ((millis() / 200) % 2)
+        PORTB |= (1 << LED_PIN);
+    else
+        PORTB &= ~(1 << LED_PIN);
+}
+
+/* ================= MAIN ================= */
+
+int main(void)
+{
+    gpio_init();
+    uart_init(103); // 9600 baud for 16MHz
+    timer0_init();
+
+    sei(); // enable interrupts
+
+    while (1)
+    {
+        check_button();
+        handle_blink();
+    }
+}
